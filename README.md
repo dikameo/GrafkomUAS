@@ -122,6 +122,3 @@ GrafkomUAS/
 - Dokumentasi ini akan diperbarui seiring pengembangan proyek.
 
 ---
-
-## Lisensi
-Proyek ini dilisensikan di bawah [MIT License](LICENSE). Silakan gunakan dan modifikasi sesuai kebutuhan akademik.
