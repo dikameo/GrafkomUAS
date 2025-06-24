@@ -102,17 +102,6 @@ Modul ini berfokus pada visualisasi dan manipulasi objek 3D dengan fitur pencaha
 
 ---
 
-## Struktur Direktori
-```
-GrafkomUAS/
-├── main.py              # File utama aplikasi
-├── assets/              # Folder untuk file .obj atau aset lainnya
-├── src/                 # Folder untuk kode sumber
-│   ├── 2d/             # Modul untuk fungsi 2D
-│   ├── 3d/             # Modul untuk fungsi 3D
-├── README.md            # Dokumentasi proyek
-└── requirements.txt     # Daftar dependensi
-```
 
 ---
 
