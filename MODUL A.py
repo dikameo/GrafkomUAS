@@ -1,4 +1,3 @@
-# Modul A: Aplikasi Grafika 2D Interaktif dengan PyOpenGL
 from OpenGL.GL import *
 from OpenGL.GLUT import *
 from OpenGL.GLU import *
@@ -10,17 +9,22 @@ clicks = []
 current_shape = 'point'
 current_color = (1.0, 0.0, 0.0)
 line_thickness = 2
+point_size = 5
 transform_translate = [0, 0]
 transform_rotate = 0
 transform_scale = 1.0
 window_rect = []
 
 def init():
-    glClearColor(0.0, 0.0, 0.0, 1.0)  # Latar belakang hitam
+    glClearColor(1.0, 1.0, 1.0, 1.0)  # Background putih
     glMatrixMode(GL_PROJECTION)
     glLoadIdentity()
     gluOrtho2D(0, window_width, 0, window_height)
     glMatrixMode(GL_MODELVIEW)
+
+def point_inside_rect(x, y, rect):
+    """Check if a point is inside the clipping rectangle."""
+    return rect[0] <= x <= rect[2] and rect[1] <= y <= rect[3]
 
 def cohen_sutherland_clip(x1, y1, x2, y2, rect):
     INSIDE, LEFT, RIGHT, BOTTOM, TOP = 0, 1, 2, 4, 8
@@ -62,6 +66,22 @@ def cohen_sutherland_clip(x1, y1, x2, y2, rect):
                 x2, y2 = x, y
                 outcode2 = compute_out_code(x2, y2)
 
+def clip_ellipse(cx, cy, rx, ry, rect):
+    """Check if ellipse is inside or intersects the clipping rectangle."""
+    left, right = cx - rx, cx + rx
+    bottom, top = cy - ry, cy + ry
+    return (rect[0] <= right and rect[2] >= left and
+            rect[1] <= top and rect[3] >= bottom)
+
+def clip_square(pts, rect):
+    """Check if square is inside or intersects the clipping rectangle."""
+    x1, y1 = pts[0]
+    x2, y2 = pts[1]
+    square_left, square_right = min(x1, x2), max(x1, x2)
+    square_bottom, square_top = min(y1, y2), max(y1, y2)
+    return (rect[0] <= square_right and rect[2] >= square_left and
+            rect[1] <= square_top and rect[3] >= square_bottom)
+
 def display():
     glClear(GL_COLOR_BUFFER_BIT)
     glLoadIdentity()
@@ -70,16 +90,27 @@ def display():
     glRotatef(transform_rotate, 0, 0, 1)
 
     for obj in objects:
-        shape, pts, color, thickness = obj
-        glColor3f(*color)
+        shape, pts, color, thickness, size = obj
         glLineWidth(thickness)
+        glPointSize(size if shape == 'point' else 1)
 
-        if window_rect and shape == 'line':
-            inside, clipped = cohen_sutherland_clip(*pts[0], *pts[1], window_rect)
-            if not inside:
-                continue
-            pts = [(clipped[0], clipped[1]), (clipped[2], clipped[3])]
-            glColor3f(0, 1, 0)  # Warna hijau jika dalam window
+        # Set color based on clipping
+        if window_rect:
+            if shape == 'line':
+                inside, clipped = cohen_sutherland_clip(*pts[0], *pts[1], window_rect)
+                if inside:
+                    pts = [(clipped[0], clipped[1]), (clipped[2], clipped[3])]
+                    glColor3f(0, 1, 0)  # Green if inside
+                else:
+                    glColor3f(*color)  # Original color if outside
+            elif shape == 'point':
+                glColor3f(0, 1, 0) if point_inside_rect(*pts[0], window_rect) else glColor3f(*color)
+            elif shape == 'square':
+                glColor3f(0, 1, 0) if clip_square(pts, window_rect) else glColor3f(*color)
+            elif shape == 'ellipse':
+                glColor3f(0, 1, 0) if clip_ellipse(pts[0][0], pts[0][1], 50, 30, window_rect) else glColor3f(*color)
+        else:
+            glColor3f(*color)  # Use original color if no clipping
 
         if shape == 'point':
             glBegin(GL_POINTS)
@@ -126,13 +157,13 @@ def mouse(button, state, x, y):
     if state == GLUT_DOWN:
         clicks.append((x, y))
         if current_shape in ['line', 'square'] and len(clicks) == 2:
-            objects.append((current_shape, clicks[:2], current_color, line_thickness))
+            objects.append((current_shape, clicks[:2], current_color, line_thickness, point_size))
             clicks = []
         elif current_shape == 'point' and len(clicks) == 1:
-            objects.append(('point', [clicks[0]], current_color, line_thickness))
+            objects.append(('point', [clicks[0]], current_color, line_thickness, point_size))
             clicks = []
         elif current_shape == 'ellipse' and len(clicks) == 1:
-            objects.append(('ellipse', [clicks[0]], current_color, line_thickness))
+            objects.append(('ellipse', [clicks[0]], current_color, line_thickness, point_size))
             clicks = []
         elif current_shape == 'window' and len(clicks) == 2:
             x1, y1 = clicks[0]
@@ -142,12 +173,14 @@ def mouse(button, state, x, y):
     glutPostRedisplay()
 
 def keyboard(key, x, y):
-    global current_shape, current_color, line_thickness
-    global transform_translate, transform_rotate, transform_scale
+    global current_shape, current_color, line_thickness, point_size
+    global transform_translate, transform_rotate, transform_scale, window_rect
     if key == b'1': current_shape = 'point'
     elif key == b'2': current_shape = 'line'
     elif key == b'3': current_shape = 'square'
     elif key == b'4': current_shape = 'ellipse'
+    elif key == b'5': current_shape = 'window'
+    elif key == b'6': window_rect = []  # Disable clipping
     elif key == b'w': transform_translate[1] += 10
     elif key == b's': transform_translate[1] -= 10
     elif key == b'a': transform_translate[0] -= 10
@@ -160,7 +193,8 @@ def keyboard(key, x, y):
     elif key == b'c': current_color = (0, 0, 1)
     elif key == b'+': line_thickness += 1
     elif key == b'-': line_thickness = max(1, line_thickness - 1)
-    elif key == b'5': current_shape = 'window'
+    elif key == b']': point_size += 1
+    elif key == b'[': point_size = max(1, point_size - 1)
     glutPostRedisplay()
 
 def main():
@@ -173,6 +207,50 @@ def main():
     glutMouseFunc(mouse)
     glutKeyboardFunc(keyboard)
     glutMainLoop()
+
+cheatsheet = """
+====================[ CHEATSHEET GRAFIKA 2D - PyOpenGL ]====================
+
+🎨 PILIHAN OBJEK (GAMBAR):
+  [1] Titik
+  [2] Garis
+  [3] Persegi
+  [4] Ellipse
+  [5] Window (untuk clipping)
+
+🖱️ PENGGAMBARAN:
+  - Klik 1x: Titik atau pusat Ellipse
+  - Klik 2x: Garis, Persegi, atau Window (dua titik sudut)
+
+🎨 PILIHAN WARNA:
+  [z] Merah     [x] Hijau     [c] Biru
+
+✏️ KETEBALAN GARIS:
+  [+] Tambah ketebalan
+  [-] Kurangi ketebalan (min: 1)
+
+🔹 UKURAN TITIK:
+  []] Tambah ukuran titik
+  [[] Kurangi ukuran titik (min: 1)
+
+🛠️ TRANSFORMASI OBJEK (BERLAKU UNTUK SEMUA OBJEK):
+  🔁 Translasi (Geser):
+    [w] Atas     [s] Bawah     [a] Kiri     [d] Kanan
+  🔃 Rotasi:
+    [r] Putar searah jarum jam (+10°)
+  🔍 Scaling:
+    [e] Perbesar     [q] Perkecil (min: 0.1x)
+
+✂️ WINDOWING & CLIPPING:
+  - Tekan [5], klik 2 titik → Membuat window aktif (kotak biru)
+  - Tekan [6] → Menonaktifkan clipping
+  - Objek dalam window (Titik, Garis, Persegi, Ellipse) → Warna hijau
+  - Objek di luar window → Warna asli objek
+
+============================================================================
+"""
+
+print(cheatsheet)
 
 if __name__ == '__main__':
     main()
