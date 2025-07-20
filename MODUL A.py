@@ -16,11 +16,39 @@ transform_scale = 1.0
 window_rect = []
 
 def init():
-    glClearColor(1.0, 1.0, 1.0, 1.0)  # Background putih
+    glClearColor(1.0, 1.0, 1.0, 1.0)  # White background
     glMatrixMode(GL_PROJECTION)
     glLoadIdentity()
     gluOrtho2D(0, window_width, 0, window_height)
     glMatrixMode(GL_MODELVIEW)
+
+def apply_transform(x, y):
+    """Apply current transformations (translate, rotate, scale) to a point."""
+    # Scale
+    x_s = x * transform_scale
+    y_s = y * transform_scale
+    # Rotate
+    rad = transform_rotate * pi / 180
+    x_r = x_s * cos(rad) - y_s * sin(rad)
+    y_r = x_s * sin(rad) + y_s * cos(rad)
+    # Translate
+    x_t = x_r + transform_translate[0]
+    y_t = y_r + transform_translate[1]
+    return x_t, y_t
+
+def inverse_transform(x, y):
+    """Apply inverse transformations to a point."""
+    # Inverse translate
+    x_t = x - transform_translate[0]
+    y_t = y - transform_translate[1]
+    # Inverse rotate
+    rad = -transform_rotate * pi / 180
+    x_r = x_t * cos(rad) - y_t * sin(rad)
+    y_r = x_t * sin(rad) + y_t * cos(rad)
+    # Inverse scale
+    x_s = x_r / transform_scale if transform_scale != 0 else x_r
+    y_s = y_r / transform_scale if transform_scale != 0 else y_r
+    return x_s, y_s
 
 def point_inside_rect(x, y, rect):
     """Check if a point is inside the clipping rectangle."""
@@ -37,27 +65,37 @@ def cohen_sutherland_clip(x1, y1, x2, y2, rect):
         elif y > rect[3]: code |= TOP
         return code
 
+    # Handle degenerate case
+    if x1 == x2 and y1 == y2:
+        return point_inside_rect(x1, y1, rect), (x1, y1, x2, y2)
+
     outcode1 = compute_out_code(x1, y1)
     outcode2 = compute_out_code(x2, y2)
+    max_iterations = 100  # Prevent infinite loops
+    iteration = 0
 
     while True:
+        if iteration >= max_iterations:
+            return False, ()
+
         if not (outcode1 | outcode2):
             return True, (x1, y1, x2, y2)
         elif outcode1 & outcode2:
             return False, ()
         else:
             outcode_out = outcode1 if outcode1 else outcode2
+            x, y = 0, 0
             if outcode_out & TOP:
-                x = x1 + (x2 - x1) * (rect[3] - y1) / (y2 - y1)
+                x = x1 + (x2 - x1) * (rect[3] - y1) / (y2 - y1 + 1e-10)
                 y = rect[3]
             elif outcode_out & BOTTOM:
-                x = x1 + (x2 - x1) * (rect[1] - y1) / (y2 - y1)
+                x = x1 + (x2 - x1) * (rect[1] - y1) / (y2 - y1 + 1e-10)
                 y = rect[1]
             elif outcode_out & RIGHT:
-                y = y1 + (y2 - y1) * (rect[2] - x1) / (x2 - x1)
+                y = y1 + (y2 - y1) * (rect[2] - x1) / (x2 - x1 + 1e-10)
                 x = rect[2]
             elif outcode_out & LEFT:
-                y = y1 + (y2 - y1) * (rect[0] - x1) / (x2 - x1)
+                y = y1 + (y2 - y1) * (rect[0] - x1) / (x2 - x1 + 1e-10)
                 x = rect[0]
             if outcode_out == outcode1:
                 x1, y1 = x, y
@@ -65,22 +103,41 @@ def cohen_sutherland_clip(x1, y1, x2, y2, rect):
             else:
                 x2, y2 = x, y
                 outcode2 = compute_out_code(x2, y2)
-
-def clip_ellipse(cx, cy, rx, ry, rect):
-    """Check if ellipse is inside or intersects the clipping rectangle."""
-    left, right = cx - rx, cx + rx
-    bottom, top = cy - ry, cy + ry
-    return (rect[0] <= right and rect[2] >= left and
-            rect[1] <= top and rect[3] >= bottom)
+        iteration += 1
 
 def clip_square(pts, rect):
-    """Check if square is inside or intersects the clipping rectangle."""
+    """Clip a square by treating it as four line segments."""
     x1, y1 = pts[0]
     x2, y2 = pts[1]
-    square_left, square_right = min(x1, x2), max(x1, x2)
-    square_bottom, square_top = min(y1, y2), max(y1, y2)
-    return (rect[0] <= square_right and rect[2] >= square_left and
-            rect[1] <= square_top and rect[3] >= square_bottom)
+    # Define the four corners of the square
+    corners = [
+        (x1, y1), (x1, y2),
+        (x1, y2), (x2, y2),
+        (x2, y2), (x2, y1),
+        (x2, y1), (x1, y1)
+    ]
+    clipped_lines = []
+    for i in range(0, 8, 2):
+        inside, clipped = cohen_sutherland_clip(corners[i][0], corners[i][1], corners[i+1][0], corners[i+1][1], rect)
+        if inside:
+            clipped_lines.append(clipped)
+    return clipped_lines
+
+def clip_ellipse(cx, cy, rx, ry, rect):
+    """Clip an ellipse by approximating it as line segments."""
+    segments = []
+    n_segments = 100
+    for i in range(n_segments):
+        angle1 = 2 * pi * i / n_segments
+        angle2 = 2 * pi * (i + 1) / n_segments
+        x1 = cx + cos(angle1) * rx
+        y1 = cy + sin(angle1) * ry
+        x2 = cx + cos(angle2) * rx
+        y2 = cy + sin(angle2) * ry
+        inside, clipped = cohen_sutherland_clip(x1, y1, x2, y2, rect)
+        if inside:
+            segments.append(clipped)
+    return segments
 
 def display():
     glClear(GL_COLOR_BUFFER_BIT)
@@ -94,52 +151,108 @@ def display():
         glLineWidth(thickness)
         glPointSize(size if shape == 'point' else 1)
 
-        # Set color based on clipping
-        if window_rect:
-            if shape == 'line':
-                inside, clipped = cohen_sutherland_clip(*pts[0], *pts[1], window_rect)
-                if inside:
-                    pts = [(clipped[0], clipped[1]), (clipped[2], clipped[3])]
-                    glColor3f(0, 1, 0)  # Green if inside
-                else:
-                    glColor3f(*color)  # Original color if outside
-            elif shape == 'point':
-                glColor3f(0, 1, 0) if point_inside_rect(*pts[0], window_rect) else glColor3f(*color)
-            elif shape == 'square':
-                glColor3f(0, 1, 0) if clip_square(pts, window_rect) else glColor3f(*color)
-            elif shape == 'ellipse':
-                glColor3f(0, 1, 0) if clip_ellipse(pts[0][0], pts[0][1], 50, 30, window_rect) else glColor3f(*color)
-        else:
-            glColor3f(*color)  # Use original color if no clipping
-
+        # Transform points to window coordinates for clipping
         if shape == 'point':
+            x, y = apply_transform(*pts[0])
+            if window_rect and point_inside_rect(x, y, window_rect):
+                glColor3f(0, 1, 0)  # Green if inside
+            else:
+                glColor3f(*color)
             glBegin(GL_POINTS)
             glVertex2f(*pts[0])
             glEnd()
         elif shape == 'line':
-            glBegin(GL_LINES)
-            glVertex2f(*pts[0])
-            glVertex2f(*pts[1])
-            glEnd()
+            x1, y1 = apply_transform(*pts[0])
+            x2, y2 = apply_transform(*pts[1])
+            if window_rect:
+                inside, clipped = cohen_sutherland_clip(x1, y1, x2, y2, window_rect)
+                if inside:
+                    # Transform clipped points back to object space (approximate)
+                    cx1, cy1 = inverse_transform(clipped[0], clipped[1])
+                    cx2, cy2 = inverse_transform(clipped[2], clipped[3])
+                    glColor3f(0, 1, 0)
+                    glBegin(GL_LINES)
+                    glVertex2f(cx1, cy1)
+                    glVertex2f(cx2, cy2)
+                    glEnd()
+                else:
+                    glColor3f(*color)
+                    glBegin(GL_LINES)
+                    glVertex2f(*pts[0])
+                    glVertex2f(*pts[1])
+                    glEnd()
+            else:
+                glColor3f(*color)
+                glBegin(GL_LINES)
+                glVertex2f(*pts[0])
+                glVertex2f(*pts[1])
+                glEnd()
         elif shape == 'square':
-            x1, y1 = pts[0]
-            x2, y2 = pts[1]
-            glBegin(GL_LINE_LOOP)
-            glVertex2f(x1, y1)
-            glVertex2f(x1, y2)
-            glVertex2f(x2, y2)
-            glVertex2f(x2, y1)
-            glEnd()
+            if window_rect:
+                x1, y1 = apply_transform(*pts[0])
+                x2, y2 = apply_transform(*pts[1])
+                clipped_lines = clip_square([(x1, y1), (x2, y2)], window_rect)
+                if clipped_lines:
+                    glColor3f(0, 1, 0)
+                    glBegin(GL_LINES)
+                    for line in clipped_lines:
+                        cx1, cy1 = inverse_transform(line[0], line[1])
+                        cx2, cy2 = inverse_transform(line[2], line[3])
+                        glVertex2f(cx1, cy1)
+                        glVertex2f(cx2, cy2)
+                    glEnd()
+                else:
+                    glColor3f(*color)
+                    x1, y1 = pts[0]
+                    x2, y2 = pts[1]
+                    glBegin(GL_LINE_LOOP)
+                    glVertex2f(x1, y1)
+                    glVertex2f(x1, y2)
+                    glVertex2f(x2, y2)
+                    glVertex2f(x2, y1)
+                    glEnd()
+            else:
+                glColor3f(*color)
+                x1, y1 = pts[0]
+                x2, y2 = pts[1]
+                glBegin(GL_LINE_LOOP)
+                glVertex2f(x1, y1)
+                glVertex2f(x1, y2)
+                glVertex2f(x2, y2)
+                glVertex2f(x2, y1)
+                glEnd()
         elif shape == 'ellipse':
             cx, cy = pts[0]
             rx, ry = 50, 30
-            glBegin(GL_LINE_LOOP)
-            for i in range(100):
-                angle = 2 * pi * i / 100
-                glVertex2f(cx + cos(angle) * rx, cy + sin(angle) * ry)
-            glEnd()
+            cx_t, cy_t = apply_transform(cx, cy)
+            if window_rect:
+                clipped_segments = clip_ellipse(cx_t, cy_t, rx * transform_scale, ry * transform_scale, window_rect)
+                if clipped_segments:
+                    glColor3f(0, 1, 0)
+                    glBegin(GL_LINES)
+                    for segment in clipped_segments:
+                        cx1, cy1 = inverse_transform(segment[0], segment[1])
+                        cx2, cy2 = inverse_transform(segment[2], segment[3])
+                        glVertex2f(cx1, cy1)
+                        glVertex2f(cx2, cy2)
+                    glEnd()
+                else:
+                    glColor3f(*color)
+                    glBegin(GL_LINE_LOOP)
+                    for i in range(100):
+                        angle = 2 * pi * i / 100
+                        glVertex2f(cx + cos(angle) * rx, cy + sin(angle) * ry)
+                    glEnd()
+            else:
+                glColor3f(*color)
+                glBegin(GL_LINE_LOOP)
+                for i in range(100):
+                    angle = 2 * pi * i / 100
+                    glVertex2f(cx + cos(angle) * rx, cy + sin(angle) * ry)
+                glEnd()
 
     if len(window_rect) == 4:
+        glLoadIdentity()  # Draw window_rect in window coordinates
         glColor3f(0, 0, 1)
         glLineWidth(1)
         glBegin(GL_LINE_LOOP)
