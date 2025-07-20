@@ -90,17 +90,7 @@ Modul ini berfokus pada visualisasi dan manipulasi objek 3D dengan fitur pencaha
    python main.py
    ```
 
----
 
-## Kontrol Aplikasi
-- **Klik Mouse**: Menentukan koordinat untuk menggambar objek 2D atau window.
-- **Keyboard/Shortcut**:
-  - Memilih warna dan ketebalan garis.
-  - Melakukan transformasi (translasi, rotasi, scaling).
-- **Drag Mouse**: Rotasi atau translasi objek 3D.
-- **Tombol Menu**: Akses fungsi tambahan seperti transformasi atau pengaturan window.
-
----
 
 
 ---
